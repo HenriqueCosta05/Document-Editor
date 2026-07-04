@@ -1,5 +1,12 @@
 import type { Node as ProseMirrorNode } from "prosemirror-model";
-import { MarkdownSerializer, MarkdownSerializerState, defaultMarkdownSerializer } from "prosemirror-markdown";
+import {
+    MarkdownParser,
+    MarkdownSerializer,
+    MarkdownSerializerState,
+    defaultMarkdownParser,
+    defaultMarkdownSerializer,
+} from "prosemirror-markdown";
+import { editorSchema } from "../schemas/editor.schema";
 
 function cellText(cell: ProseMirrorNode): string {
     let text = "";
@@ -51,4 +58,15 @@ export const markdownSerializer = new MarkdownSerializer(
             mixable: true,
         },
     },
+);
+
+// Reuses defaultMarkdownParser's tokenizer/token spec against our schema —
+// node/mark names match prosemirror-schema-basic/-list, so no custom token
+// mapping is needed. Tables/underline/color/highlight have no standard
+// Markdown source syntax, so parsing for those is intentionally unsupported
+// (mirrors the lossy tradeoffs already documented on the serializer above).
+export const markdownParser = new MarkdownParser(
+    editorSchema,
+    defaultMarkdownParser.tokenizer,
+    defaultMarkdownParser.tokens,
 );

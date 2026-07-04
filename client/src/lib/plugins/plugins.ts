@@ -8,6 +8,7 @@ import { dropCursor } from "prosemirror-dropcursor";
 import { gapCursor } from "prosemirror-gapcursor";
 import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { columnResizing, tableEditing } from "prosemirror-tables";
+import { markdownPastePlugin } from "./markdownPaste";
 
 function buildInputRules(schema: Schema) {
     const rules = [];
@@ -63,5 +64,6 @@ export function buildPlugins(schema: Schema): Plugin[] {
         history(),
         columnResizing(),
         tableEditing(),
+        markdownPastePlugin(),
     ];
 }
