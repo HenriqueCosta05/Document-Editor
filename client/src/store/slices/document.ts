@@ -2,7 +2,7 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { DocumentEntity, SaveStatus } from "../../@types/document";
 
 export type DocumentSlice = {
-    current: DocumentEntity | {};
+    current: Partial<DocumentEntity>;
     saveStatus: SaveStatus;
 };
 
