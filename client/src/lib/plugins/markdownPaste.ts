@@ -13,7 +13,18 @@ export function markdownPastePlugin() {
                     return false;
                 }
 
-                const parsed = markdownParser.parse(text);
+                // A malformed/unsupported token from the parser must never
+                // throw here: an uncaught exception inside handlePaste runs
+                // during the browser's native paste event and leaves the
+                // EditorView's paste handling broken for the rest of the
+                // session, not just the one paste. Falling back to the
+                // default plain-text paste is always safe.
+                let parsed;
+                try {
+                    parsed = markdownParser.parse(text);
+                } catch {
+                    return false;
+                }
                 if (!parsed) {
                     return false;
                 }

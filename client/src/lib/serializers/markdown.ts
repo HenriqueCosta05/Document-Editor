@@ -6,6 +6,8 @@ import {
     defaultMarkdownParser,
     defaultMarkdownSerializer,
 } from "prosemirror-markdown";
+import MarkdownIt from "markdown-it";
+import Token from "markdown-it/lib/token.mjs";
 import { editorSchema } from "../schemas/editor.schema";
 
 function cellText(cell: ProseMirrorNode): string {
@@ -60,13 +62,49 @@ export const markdownSerializer = new MarkdownSerializer(
     },
 );
 
-// Reuses defaultMarkdownParser's tokenizer/token spec against our schema —
-// node/mark names match prosemirror-schema-basic/-list, so no custom token
-// mapping is needed. Tables/underline/color/highlight have no standard
-// Markdown source syntax, so parsing for those is intentionally unsupported
-// (mirrors the lossy tradeoffs already documented on the serializer above).
-export const markdownParser = new MarkdownParser(
-    editorSchema,
-    defaultMarkdownParser.tokenizer,
-    defaultMarkdownParser.tokens,
-);
+// Table cells tokenize as a bare "inline" token with no paragraph wrapper,
+// but our schema's cells require block content, so a paragraph pair is
+// spliced in around each one.
+function wrapTableCellInlineTokens(tokens: Token[]): Token[] {
+    const result: Token[] = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+        const token = tokens[i];
+        result.push(token);
+
+        const isCellOpen = token.type === "th_open" || token.type === "td_open";
+        const next = tokens[i + 1];
+        if (isCellOpen && next?.type === "inline") {
+            result.push(new Token("paragraph_open", "p", 1), next, new Token("paragraph_close", "p", -1));
+            i += 1;
+        }
+    }
+    return result;
+}
+
+// Start from the same "commonmark" preset defaultMarkdownParser uses (so the
+// token surface it's tuned for stays unchanged) and enable only "table" on
+// top of it. Switching to the "default" preset instead would also pull in
+// "strikethrough"/"linkify" and any other rule markdown-it ships, producing
+// token types with no entry below — MarkdownParser throws on those, and an
+// uncaught throw from inside handlePaste corrupts the EditorView's paste
+// handling entirely, not just table pastes. Enabling rules one at a time
+// keeps the token set fully accounted for.
+const tableAwareTokenizer = new MarkdownIt("commonmark", { html: false }).enable("table");
+const tokenizeWithTables = tableAwareTokenizer.parse.bind(tableAwareTokenizer);
+tableAwareTokenizer.parse = (src, env) => wrapTableCellInlineTokens(tokenizeWithTables(src, env));
+
+// Reuses defaultMarkdownParser's token spec against our schema — node/mark
+// names match prosemirror-schema-basic/-list, so no custom mapping is
+// needed for those. Table tokens are added on top since defaultMarkdownParser
+// doesn't have any. underline/color/highlight still have no standard
+// Markdown source syntax, so parsing for those remains unsupported (mirrors
+// the lossy tradeoffs already documented on the serializer above).
+export const markdownParser = new MarkdownParser(editorSchema, tableAwareTokenizer, {
+    ...defaultMarkdownParser.tokens,
+    table: { block: "table" },
+    thead: { ignore: true },
+    tbody: { ignore: true },
+    tr: { block: "table_row" },
+    th: { block: "table_header" },
+    td: { block: "table_cell" },
+});
