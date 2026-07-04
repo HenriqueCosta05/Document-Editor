@@ -5,13 +5,13 @@ type ThemeEndpoints = {
     getTheme: {
         type: "query";
         result: Theme;
-        arg?: { id: string };
+        arg?: string;
     };
 
     setTheme: {
         type: "mutation";
         result: Theme;
-        arg: { id: string; theme: Theme };
+        arg: string
     };
 };
 
@@ -36,3 +36,4 @@ export const themeAPI = BaseAPI<ThemeEndpoints, "theme">(
     }
 )
 
+export const { useGetThemeQuery } = themeAPI;
