@@ -8,12 +8,14 @@ import { EditorSurface } from "./Editor.style";
 export interface EditorProps {
     onReady: (view: EditorView) => void;
     onDocChanged?: () => void;
+    onTransaction?: (view: EditorView) => void;
 }
 
-const Editor = ({ onReady, onDocChanged }: EditorProps) => {
+const Editor = ({ onReady, onDocChanged, onTransaction }: EditorProps) => {
     const mountRef = useRef<HTMLDivElement | null>(null);
     const onReadyRef = useRef(onReady);
     const onDocChangedRef = useRef(onDocChanged);
+    const onTransactionRef = useRef(onTransaction);
 
     useEffect(() => {
         onReadyRef.current = onReady;
@@ -22,6 +24,10 @@ const Editor = ({ onReady, onDocChanged }: EditorProps) => {
     useEffect(() => {
         onDocChangedRef.current = onDocChanged;
     }, [onDocChanged]);
+
+    useEffect(() => {
+        onTransactionRef.current = onTransaction;
+    }, [onTransaction]);
 
     useEffect(() => {
         if (!mountRef.current) {
@@ -41,6 +47,7 @@ const Editor = ({ onReady, onDocChanged }: EditorProps) => {
                 if (transaction.docChanged) {
                     onDocChangedRef.current?.();
                 }
+                onTransactionRef.current?.(view);
             },
         });
 
