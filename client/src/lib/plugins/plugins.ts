@@ -1,6 +1,7 @@
 import type { Schema } from "prosemirror-model";
 import type { Plugin } from "prosemirror-state";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
+import { collab } from "prosemirror-collab";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
@@ -8,6 +9,7 @@ import { dropCursor } from "prosemirror-dropcursor";
 import { gapCursor } from "prosemirror-gapcursor";
 import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { columnResizing, tableEditing } from "prosemirror-tables";
+import { collabCursorPlugin } from "./collabCursor";
 import { markdownPastePlugin } from "./markdownPaste";
 import { sanitizePastedHtmlPlugin } from "./sanitizePaste";
 
@@ -55,8 +57,13 @@ function buildKeymap(schema: Schema) {
     return keymap(keys);
 }
 
-export function buildPlugins(schema: Schema): Plugin[] {
-    return [
+export type CollabConfig = {
+    version: number;
+    clientID: string;
+};
+
+export function buildPlugins(schema: Schema, collabConfig?: CollabConfig): Plugin[] {
+    const plugins = [
         buildInputRules(schema),
         buildKeymap(schema),
         keymap(baseKeymap),
@@ -68,4 +75,11 @@ export function buildPlugins(schema: Schema): Plugin[] {
         markdownPastePlugin(),
         sanitizePastedHtmlPlugin(),
     ];
+
+    if (collabConfig) {
+        plugins.push(collab({ version: collabConfig.version, clientID: collabConfig.clientID }));
+        plugins.push(collabCursorPlugin());
+    }
+
+    return plugins;
 }
