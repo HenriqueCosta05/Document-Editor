@@ -18,7 +18,16 @@ DATABASES = {
 
 CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
 
-# NOTE: CHANNEL_LAYERS still uses InMemoryChannelLayer inherited from base.py.
-# That only works within a single ASGI process. Scaling to multiple
-# worker processes requires switching to channels_redis.core.RedisChannelLayer
-# backed by a shared Redis instance. Not implemented yet — single-process only.
+# InMemoryChannelLayer (base.py default) only works within a single ASGI
+# process, so group_send never reaches clients connected to a different
+# worker process — breaks cross-client sync as soon as prod runs more than
+# one worker. Redis-backed layer makes group membership/broadcast shared
+# across all worker processes.
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.environ.get("REDIS_URL", "redis://localhost:6379/0")],
+        },
+    },
+}

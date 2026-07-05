@@ -6,8 +6,10 @@ import { Step } from "prosemirror-transform";
 import { editorSchema } from "../../lib/schemas/editor.schema";
 import { buildPlugins } from "../../lib/plugins/plugins";
 import { collabCursorKey } from "../../lib/plugins/collabCursor";
+import { ATTRIBUTION_META, buildAttributionTransaction } from "../../lib/collab/attribution";
 import { fetchCollabState } from "../../services/collabState";
 import { CollabSocket } from "../../services/collabSocket";
+import type { CollabIdentity } from "../../@types/collab";
 import { EditorSurface } from "./Editor.style";
 
 export interface EditorProps {
@@ -43,14 +45,12 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
             return;
         }
 
-        // Per-tab id for prosemirror-collab step attribution. Independent of
-        // the author Identity (display name/color), which is negotiated over
-        // the socket separately and persisted across reconnects.
         const clientID = crypto.randomUUID();
         const socket = new CollabSocket();
         let view: EditorView | null = null;
         let cancelled = false;
         let ownIdentityId: string | null = null;
+        let ownIdentity: CollabIdentity | null = null;
 
         function sendOwnCursor(state: EditorState) {
             if (!ownIdentityId) {
@@ -87,7 +87,17 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
                     if (!view) {
                         return;
                     }
-                    const newState = view.state.apply(transaction);
+                    let newState = view.state.apply(transaction);
+                    if (transaction.docChanged) {
+                        const remoteAuthors = transaction.getMeta(ATTRIBUTION_META) as
+                            | (CollabIdentity | null)[]
+                            | undefined;
+                        const authors = remoteAuthors ?? (ownIdentity ? transaction.steps.map(() => ownIdentity) : []);
+                        const markTr = buildAttributionTransaction(newState, transaction, authors);
+                        if (markTr) {
+                            newState = newState.apply(markTr);
+                        }
+                    }
                     view.updateState(newState);
                     if (transaction.docChanged) {
                         onDocChangedRef.current?.();
@@ -95,35 +105,82 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
                     }
                     if (transaction.docChanged || transaction.selectionSet) {
                         sendOwnCursor(newState);
+                        onTransactionRef.current?.(view);
                     }
-                    onTransactionRef.current?.(view);
                 },
             });
 
             onReadyRef.current(view);
 
-            socket.connect(documentId, displayName, localStorage.getItem(IDENTITY_STORAGE_KEY), {
+            function resyncFromServer() {
+                if (cancelled) {
+                    return;
+                }
+                fetchCollabState(documentId).then((collabState) => {
+                    if (cancelled || !view) {
+                        return;
+                    }
+                    const freshState = EditorState.create({
+                        doc: editorSchema.nodeFromJSON(collabState.content),
+                        plugins: buildPlugins(editorSchema, { version: collabState.version, clientID }),
+                    });
+                    view.updateState(freshState);
+                    if (ownIdentityId) {
+                        sendOwnCursor(freshState);
+                    }
+                });
+            }
+
+            socket.connect(documentId, displayName, sessionStorage.getItem(IDENTITY_STORAGE_KEY), {
                 onIdentified(message) {
-                    localStorage.setItem(IDENTITY_STORAGE_KEY, message.identity.id);
+                    sessionStorage.setItem(IDENTITY_STORAGE_KEY, message.identity.id);
+                    socket.identifyAs(message.identity.id);
                     ownIdentityId = message.identity.id;
+                    ownIdentity = message.identity;
                     if (view) {
                         sendOwnCursor(view.state);
                     }
                 },
+                onReconnected: resyncFromServer,
                 onNewSteps(message) {
                     if (!view) {
                         return;
                     }
-                    const steps = message.steps.map((step) => Step.fromJSON(editorSchema, step));
-                    view.dispatch(receiveTransaction(view.state, steps, message.clientIDs));
+                    try {
+                        const steps = message.steps.map((step) => Step.fromJSON(editorSchema, step));
+                        const tr = receiveTransaction(view.state, steps, message.clientIDs).setMeta(
+                            ATTRIBUTION_META,
+                            message.authors,
+                        );
+                        view.dispatch(tr);
+                    } catch {
+                        // Steps that don't cleanly apply mean a structural edit
+                        // (e.g. concurrent table row edits) diverged the local
+                        // doc from the server's — the server never validates
+                        // steps against a schema (see collab_service.py), so
+                        // this can't be prevented, only recovered from by
+                        // dropping the stale local doc and pulling fresh state.
+                        resyncFromServer();
+                    }
                 },
                 onRebaseRequired(message) {
                     if (!view) {
                         return;
                     }
-                    const steps = message.steps.map((step) => Step.fromJSON(editorSchema, step));
-                    view.dispatch(receiveTransaction(view.state, steps, message.clientIDs));
-                    sendPendingSteps(view.state);
+                    try {
+                        const steps = message.steps.map((step) => Step.fromJSON(editorSchema, step));
+                        const tr = receiveTransaction(view.state, steps, message.clientIDs).setMeta(
+                            ATTRIBUTION_META,
+                            message.authors,
+                        );
+                        const needsExplicitResend = !tr.docChanged;
+                        view.dispatch(tr);
+                        if (needsExplicitResend) {
+                            sendPendingSteps(view.state);
+                        }
+                    } catch {
+                        resyncFromServer();
+                    }
                 },
                 onCursorUpdate(message) {
                     if (!view || message.identity.id === ownIdentityId) {
