@@ -22,6 +22,11 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.identity:
+            await self.channel_layer.group_send(
+                self.group_name,
+                {"type": "broadcast_cursor_left", "identity_id": self.identity.id},
+            )
 
     async def receive_json(self, content, **kwargs):
         msg_type = content.get("type")
@@ -29,6 +34,8 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
             await self._handle_identify(content)
         elif msg_type == "submit_steps":
             await self._handle_submit_steps(content)
+        elif msg_type == "cursor":
+            await self._handle_cursor(content)
 
     async def _handle_identify(self, content):
         self.identity = await database_sync_to_async(resolve_or_create_identity)(
@@ -95,3 +102,36 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
                 "version": event["version"],
             }
         )
+
+    async def _handle_cursor(self, content):
+        if not self.identity:
+            return
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                "type": "broadcast_cursor",
+                "identity": {
+                    "id": self.identity.id,
+                    "displayName": self.identity.display_name,
+                    "color": self.identity.color,
+                },
+                "from": content["from"],
+                "to": content["to"],
+            },
+        )
+
+    async def broadcast_cursor(self, event):
+        """Also echoed to the sender, like broadcast_steps — the client
+        filters out its own identity id rather than the server excluding
+        the sender's channel."""
+        await self.send_json(
+            {
+                "type": "cursor_update",
+                "identity": event["identity"],
+                "from": event["from"],
+                "to": event["to"],
+            }
+        )
+
+    async def broadcast_cursor_left(self, event):
+        await self.send_json({"type": "cursor_left", "identityId": event["identity_id"]})

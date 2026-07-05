@@ -7,6 +7,8 @@ export type CollabSocketHandlers = {
     onSubmitAck?: (message: Extract<ServerToClientMessage, { type: "submit_ack" }>) => void;
     onRebaseRequired?: (message: Extract<ServerToClientMessage, { type: "rebase_required" }>) => void;
     onNewSteps?: (message: Extract<ServerToClientMessage, { type: "new_steps" }>) => void;
+    onCursorUpdate?: (message: Extract<ServerToClientMessage, { type: "cursor_update" }>) => void;
+    onCursorLeft?: (message: Extract<ServerToClientMessage, { type: "cursor_left" }>) => void;
 };
 
 function resolveWebSocketUrl(documentId: string): string {
@@ -40,12 +42,22 @@ export class CollabSocket {
                 case "new_steps":
                     handlers.onNewSteps?.(message);
                     break;
+                case "cursor_update":
+                    handlers.onCursorUpdate?.(message);
+                    break;
+                case "cursor_left":
+                    handlers.onCursorLeft?.(message);
+                    break;
             }
         });
     }
 
     sendSteps(version: number, steps: unknown[], clientID: string, docJSON: Record<string, unknown>) {
         this.send({ type: "submit_steps", version, steps, clientID, docJSON });
+    }
+
+    sendCursor(from: number, to: number) {
+        this.send({ type: "cursor", from, to });
     }
 
     disconnect() {

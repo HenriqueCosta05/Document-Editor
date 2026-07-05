@@ -5,6 +5,7 @@ import { receiveTransaction, sendableSteps } from "prosemirror-collab";
 import { Step } from "prosemirror-transform";
 import { editorSchema } from "../../lib/schemas/editor.schema";
 import { buildPlugins } from "../../lib/plugins/plugins";
+import { collabCursorKey } from "../../lib/plugins/collabCursor";
 import { fetchCollabState } from "../../services/collabState";
 import { CollabSocket } from "../../services/collabSocket";
 import { EditorSurface } from "./Editor.style";
@@ -49,6 +50,14 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
         const socket = new CollabSocket();
         let view: EditorView | null = null;
         let cancelled = false;
+        let ownIdentityId: string | null = null;
+
+        function sendOwnCursor(state: EditorState) {
+            if (!ownIdentityId) {
+                return;
+            }
+            socket.sendCursor(state.selection.from, state.selection.to);
+        }
 
         function sendPendingSteps(state: EditorState) {
             const sendable = sendableSteps(state);
@@ -84,6 +93,9 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
                         onDocChangedRef.current?.();
                         sendPendingSteps(newState);
                     }
+                    if (transaction.docChanged || transaction.selectionSet) {
+                        sendOwnCursor(newState);
+                    }
                     onTransactionRef.current?.(view);
                 },
             });
@@ -93,6 +105,10 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
             socket.connect(documentId, displayName, localStorage.getItem(IDENTITY_STORAGE_KEY), {
                 onIdentified(message) {
                     localStorage.setItem(IDENTITY_STORAGE_KEY, message.identity.id);
+                    ownIdentityId = message.identity.id;
+                    if (view) {
+                        sendOwnCursor(view.state);
+                    }
                 },
                 onNewSteps(message) {
                     if (!view) {
@@ -108,6 +124,25 @@ const Editor = ({ documentId, displayName, onReady, onDocChanged, onTransaction 
                     const steps = message.steps.map((step) => Step.fromJSON(editorSchema, step));
                     view.dispatch(receiveTransaction(view.state, steps, message.clientIDs));
                     sendPendingSteps(view.state);
+                },
+                onCursorUpdate(message) {
+                    if (!view || message.identity.id === ownIdentityId) {
+                        return;
+                    }
+                    view.dispatch(
+                        view.state.tr.setMeta(collabCursorKey, {
+                            type: "update",
+                            identity: message.identity,
+                            from: message.from,
+                            to: message.to,
+                        }),
+                    );
+                },
+                onCursorLeft(message) {
+                    if (!view) {
+                        return;
+                    }
+                    view.dispatch(view.state.tr.setMeta(collabCursorKey, { type: "remove", identityId: message.identityId }));
                 },
             });
         });

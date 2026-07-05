@@ -52,3 +52,38 @@ async def test_broadcast_reaches_other_client_in_same_document_group():
 
     await alice.disconnect()
     await bob.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_cursor_broadcasts_to_group_and_left_notice_on_disconnect():
+    await Document.objects.acreate(id="doc-2", content={"type": "doc", "content": []}, version=0)
+
+    alice = WebsocketCommunicator(DocumentCollabConsumer.as_asgi(), "/ws/documents/doc-2/")
+    alice.scope["url_route"] = {"kwargs": {"doc_id": "doc-2"}}
+    bob = WebsocketCommunicator(DocumentCollabConsumer.as_asgi(), "/ws/documents/doc-2/")
+    bob.scope["url_route"] = {"kwargs": {"doc_id": "doc-2"}}
+
+    await alice.connect()
+    await bob.connect()
+
+    await alice.send_json_to({"type": "identify", "displayName": "Alice", "identityId": None})
+    identified = await alice.receive_json_from()
+    alice_identity_id = identified["identity"]["id"]
+
+    await alice.send_json_to({"type": "cursor", "from": 1, "to": 4})
+
+    cursor_to_alice = await alice.receive_json_from()
+    cursor_to_bob = await bob.receive_json_from()
+
+    for msg in (cursor_to_alice, cursor_to_bob):
+        assert msg["type"] == "cursor_update"
+        assert msg["identity"]["id"] == alice_identity_id
+        assert msg["from"] == 1
+        assert msg["to"] == 4
+
+    await alice.disconnect()
+
+    left = await bob.receive_json_from()
+    assert left == {"type": "cursor_left", "identityId": alice_identity_id}
+
+    await bob.disconnect()
