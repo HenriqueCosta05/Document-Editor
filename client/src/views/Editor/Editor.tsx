@@ -1,17 +1,17 @@
 import { useCallback, useState } from "react";
-import { Button, TextField, Typography } from "@mui/material";
+import { TextField, Typography } from "@mui/material";
 import type { EditorView as ProseMirrorEditorView } from "prosemirror-view";
 import DocumentEditor from "../../components/Editor/Editor";
 import EditorToolbar from "../../components/EditorToolbar/EditorToolbar";
 import ExportMenu from "../../components/ExportMenu/ExportMenu";
 import { useAppDispatch, useAppSelector } from "../../hooks/redux";
 import { setSaveStatus, setTitle } from "../../store/slices/document";
+import Welcome from "../Welcome/Welcome";
 import { EditorHeader, EditorPage } from "./Editor.style";
 
 const DISPLAY_NAME_STORAGE_KEY = "documenter.displayName";
 
-// No document CRUD exists yet (collab layer only) — the id of the single
-// Document row provisioned out-of-band for collab to operate against.
+// TODO: This is a temporary hack to allow the editor to work without a backend. It should be removed once the backend is implemented.
 const DOCUMENT_ID = "demo";
 
 const Editor = () => {
@@ -22,7 +22,6 @@ const Editor = () => {
     const [view, setView] = useState<ProseMirrorEditorView | null>(null);
     const [, setTick] = useState(0);
     const [displayName, setDisplayName] = useState(() => localStorage.getItem(DISPLAY_NAME_STORAGE_KEY));
-    const [nameDraft, setNameDraft] = useState("");
 
     const handleReady = useCallback((readyView: ProseMirrorEditorView) => {
         setView(readyView);
@@ -36,29 +35,13 @@ const Editor = () => {
         dispatch(setSaveStatus("dirty"));
     }, [dispatch]);
 
+    const handleWelcomeSubmit = useCallback((name: string) => {
+        localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
+        setDisplayName(name);
+    }, []);
+
     if (!displayName) {
-        return (
-            <EditorPage>
-                <EditorHeader>
-                    <TextField
-                        variant="standard"
-                        label="Your name"
-                        value={nameDraft}
-                        onChange={(event) => setNameDraft(event.target.value)}
-                    />
-                    <Button
-                        variant="contained"
-                        disabled={!nameDraft.trim()}
-                        onClick={() => {
-                            localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, nameDraft.trim());
-                            setDisplayName(nameDraft.trim());
-                        }}
-                    >
-                        Start editing
-                    </Button>
-                </EditorHeader>
-            </EditorPage>
-        );
+        return <Welcome onSubmit={handleWelcomeSubmit} />;
     }
 
     return (
