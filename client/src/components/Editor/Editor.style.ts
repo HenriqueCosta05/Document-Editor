@@ -1,7 +1,14 @@
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import { keyframes } from "@emotion/react";
 
 const CODE_FONT_FAMILY = '"Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
+
+const authorshipFade = keyframes({
+    "0%": { backgroundColor: "var(--author-bg)", boxShadow: "inset 0 -2px 0 0 var(--author-line)" },
+    "60%": { backgroundColor: "var(--author-bg)", boxShadow: "inset 0 -2px 0 0 var(--author-line)" },
+    "100%": { backgroundColor: "transparent", boxShadow: "inset 0 -2px 0 0 transparent" },
+});
 
 export const EditorSurface = styled(Box, { name: "EditorSurface", slot: "root" })(({ theme }) => ({
     minHeight: "60vh",
@@ -48,5 +55,10 @@ export const EditorSurface = styled(Box, { name: "EditorSurface", slot: "root" }
         "&:hover": {
             textDecorationColor: theme.palette.primary.main,
         },
+    },
+    "& .authorship-mark": {
+        backgroundColor: "var(--author-bg)",
+        boxShadow: "inset 0 -2px 0 0 var(--author-line)",
+        animation: `${authorshipFade} 4s ease-in forwards`,
     },
 }));

@@ -18,6 +18,8 @@ def submit_steps(
     steps: list[dict],
     client_id: str,
     author_name: str,
+    author_id: str,
+    author_color: str,
     new_content: dict,
 ) -> SubmitResult:
     """
@@ -45,6 +47,8 @@ def submit_steps(
             step=step,
             client_id=client_id,
             author_name=author_name,
+            author_id=author_id,
+            author_color=author_color,
         )
         for i, step in enumerate(steps)
     ]

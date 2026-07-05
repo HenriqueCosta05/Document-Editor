@@ -19,7 +19,7 @@ export type ClientToServerMessage =
 export type ServerToClientMessage =
     | { type: "identified"; identity: CollabIdentity }
     | { type: "submit_ack"; version: number }
-    | { type: "rebase_required"; steps: unknown[]; clientIDs: string[]; version: number }
-    | { type: "new_steps"; steps: unknown[]; clientIDs: string[]; version: number }
+    | { type: "rebase_required"; steps: unknown[]; clientIDs: string[]; authors: CollabIdentity[]; version: number }
+    | { type: "new_steps"; steps: unknown[]; clientIDs: string[]; authors: CollabIdentity[]; version: number }
     | { type: "cursor_update"; identity: CollabIdentity; from: number; to: number }
     | { type: "cursor_left"; identityId: string };

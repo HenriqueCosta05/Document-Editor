@@ -34,6 +34,8 @@ def test_submit_steps_accepted_advances_version_and_appends_steps():
         steps=[{"stepType": "replace"}, {"stepType": "replace"}],
         client_id="client-a",
         author_name="Alice",
+        author_id="alice-id",
+        author_color="#e03131",
         new_content={"type": "doc", "content": ["updated"]},
     )
 
@@ -54,8 +56,8 @@ def test_submit_steps_stale_base_version_rejected_with_missed_steps():
     step_repo.append_many(
         "doc-1",
         [
-            StepRecord(version=1, step={"a": 1}, client_id="c1", author_name="Bob"),
-            StepRecord(version=2, step={"a": 2}, client_id="c1", author_name="Bob"),
+            StepRecord(version=1, step={"a": 1}, client_id="c1", author_name="Bob", author_id="bob-id", author_color="#2f9e44"),
+            StepRecord(version=2, step={"a": 2}, client_id="c1", author_name="Bob", author_id="bob-id", author_color="#2f9e44"),
         ],
     )
 
@@ -67,6 +69,8 @@ def test_submit_steps_stale_base_version_rejected_with_missed_steps():
         steps=[{"stepType": "replace"}],
         client_id="client-b",
         author_name="Carol",
+        author_id="carol-id",
+        author_color="#1971c2",
         new_content={"type": "doc", "content": ["stale"]},
     )
 

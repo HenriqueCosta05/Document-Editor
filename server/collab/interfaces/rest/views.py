@@ -18,4 +18,6 @@ class CollabStateView(APIView):
             snapshot = get_snapshot(DocumentRepository(), doc_id)
         except DocumentNotFoundError:
             return Response(status=404)
-        return Response(CollabStateSerializer(snapshot).data)
+        response = Response(CollabStateSerializer(snapshot).data)
+        response["Cache-Control"] = "no-store"
+        return response

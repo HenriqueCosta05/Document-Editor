@@ -27,6 +27,8 @@ class StepRecord:
     step: dict
     client_id: str
     author_name: str
+    author_id: str
+    author_color: str
 
 
 @dataclass(frozen=True)

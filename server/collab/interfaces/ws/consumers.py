@@ -1,3 +1,6 @@
+import asyncio
+from collections import defaultdict
+
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
@@ -6,6 +9,17 @@ from collab.repositories.identity_repository import IdentityRepository
 from collab.repositories.step_repository import StepRepository
 from collab.services.collab_service import submit_steps
 from collab.services.identity_service import resolve_or_create_identity
+
+# DocumentRepository.get_for_update() uses select_for_update(), which SQLite
+# silently ignores (no real row lock). Without this, two submit_steps calls
+# for the same doc racing across connections can both read the same
+# current.version, both pass the version check, and both write — corrupting
+# the doc. This serializes submissions per doc_id within this process.
+_document_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def _author_payload(record):
+    return {"id": record.author_id, "displayName": record.author_name, "color": record.author_color}
 
 
 class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
@@ -56,16 +70,21 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
 
     async def _handle_submit_steps(self, content):
         author_name = self.identity.display_name if self.identity else "anonymous"
-        result = await database_sync_to_async(submit_steps)(
-            DocumentRepository(),
-            StepRepository(),
-            self.doc_id,
-            content["version"],
-            content["steps"],
-            content["clientID"],
-            author_name,
-            content["docJSON"],
-        )
+        author_id = self.identity.id if self.identity else ""
+        author_color = self.identity.color if self.identity else "#000000"
+        async with _document_locks[self.doc_id]:
+            result = await database_sync_to_async(submit_steps)(
+                DocumentRepository(),
+                StepRepository(),
+                self.doc_id,
+                content["version"],
+                content["steps"],
+                content["clientID"],
+                author_name,
+                author_id,
+                author_color,
+                content["docJSON"],
+            )
 
         if result.accepted:
             await self.send_json({"type": "submit_ack", "version": result.new_version})
@@ -75,6 +94,7 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
                     "type": "broadcast_steps",
                     "steps": [r.step for r in result.records],
                     "client_ids": [r.client_id for r in result.records],
+                    "authors": [_author_payload(r) for r in result.records],
                     "version": result.new_version,
                 },
             )
@@ -84,6 +104,7 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
                     "type": "rebase_required",
                     "steps": [r.step for r in result.steps_since],
                     "clientIDs": [r.client_id for r in result.steps_since],
+                    "authors": [_author_payload(r) for r in result.steps_since],
                     "version": result.steps_since[-1].version if result.steps_since else content["version"],
                 }
             )
@@ -99,6 +120,7 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
                 "type": "new_steps",
                 "steps": event["steps"],
                 "clientIDs": event["client_ids"],
+                "authors": event["authors"],
                 "version": event["version"],
             }
         )
