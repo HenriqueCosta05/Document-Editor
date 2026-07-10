@@ -59,6 +59,37 @@ const highlight: MarkSpec = {
     },
 };
 
+const editedBy: MarkSpec = {
+    attrs: { id: { default: "" }, name: { default: "" }, color: { default: "#999999" } },
+    excludes: "",
+    inclusive: false,
+    parseDOM: [
+        {
+            tag: "span[data-author-id]",
+            getAttrs: (dom) => ({
+                id: (dom as HTMLElement).getAttribute("data-author-id") || "",
+                name: (dom as HTMLElement).getAttribute("data-author-name") || "",
+                color: (dom as HTMLElement).getAttribute("data-author-color") || "#999999",
+            }),
+        },
+    ],
+    toDOM(mark) {
+        const authorColor = mark.attrs.color as string;
+        return [
+            "span",
+            {
+                class: "authorship-mark",
+                "data-author-id": mark.attrs.id,
+                "data-author-name": mark.attrs.name,
+                "data-author-color": authorColor,
+                title: `Edited by ${mark.attrs.name}`,
+                style: `--author-bg: ${authorColor}26; --author-line: ${authorColor}`,
+            },
+            0,
+        ];
+    },
+};
+
 const baseNodes = basicSchema.spec.nodes.update("paragraph", paragraph).update("heading", heading);
 
 const nodesWithLists = addListNodes(baseNodes, "paragraph block*", "block");
@@ -69,5 +100,5 @@ const nodesWithTables = nodesWithLists.append(
 
 export const editorSchema = new Schema({
     nodes: nodesWithTables,
-    marks: basicSchema.spec.marks.append({ underline, strike, color, highlight }),
+    marks: basicSchema.spec.marks.append({ underline, strike, color, highlight, edited_by: editedBy }),
 });

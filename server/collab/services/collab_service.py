@@ -3,6 +3,7 @@ from django.db import transaction
 from collab.domain.entities import DocSnapshot, StepRecord, SubmitResult
 from collab.repositories.document_repository import DocumentRepository
 from collab.repositories.step_repository import StepRepository
+from collab.services import content_cache
 
 
 def get_snapshot(doc_repo: DocumentRepository, doc_id: str) -> DocSnapshot:
@@ -18,6 +19,8 @@ def submit_steps(
     steps: list[dict],
     client_id: str,
     author_name: str,
+    author_id: str,
+    author_color: str,
     new_content: dict,
 ) -> SubmitResult:
     """
@@ -45,12 +48,18 @@ def submit_steps(
             step=step,
             client_id=client_id,
             author_name=author_name,
+            author_id=author_id,
+            author_color=author_color,
         )
         for i, step in enumerate(steps)
     ]
     new_version = current.version + len(steps)
 
-    doc_repo.save_snapshot(doc_id, new_content, new_version)
+    # version is bumped synchronously (cheap, and other submissions' conflict
+    # check depends on it never lagging); the content blob itself is only
+    # cached here and flushed to sqlite on a debounce — see content_cache.
+    doc_repo.bump_version(doc_id, new_version)
     step_repo.append_many(doc_id, records)
+    content_cache.set_pending(doc_id, new_content, new_version)
 
     return SubmitResult(accepted=True, new_version=new_version, records=records)

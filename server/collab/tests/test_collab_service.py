@@ -4,9 +4,17 @@ from collab.domain.entities import StepRecord
 from collab.models import Document
 from collab.repositories.document_repository import DocumentRepository
 from collab.repositories.step_repository import StepRepository
+from collab.services import content_cache
 from collab.services.collab_service import get_snapshot, submit_steps
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def _clear_content_cache():
+    content_cache._pending.clear()
+    yield
+    content_cache._pending.clear()
 
 
 def _make_doc(doc_id="doc-1", version=0, content=None):
@@ -34,6 +42,8 @@ def test_submit_steps_accepted_advances_version_and_appends_steps():
         steps=[{"stepType": "replace"}, {"stepType": "replace"}],
         client_id="client-a",
         author_name="Alice",
+        author_id="alice-id",
+        author_color="#e03131",
         new_content={"type": "doc", "content": ["updated"]},
     )
 
@@ -44,8 +54,15 @@ def test_submit_steps_accepted_advances_version_and_appends_steps():
 
     updated = Document.objects.get(pk="doc-1")
     assert updated.version == 2
-    assert updated.content == {"type": "doc", "content": ["updated"]}
+    # content isn't written to sqlite synchronously — it's cached for the
+    # consumer's debounced flush (see content_cache) — but a fresh read
+    # through get_snapshot must still see it immediately.
+    assert updated.content == {"type": "doc", "content": []}
     assert updated.steps.count() == 2
+
+    snapshot = get_snapshot(DocumentRepository(), "doc-1")
+    assert snapshot.version == 2
+    assert snapshot.content == {"type": "doc", "content": ["updated"]}
 
 
 def test_submit_steps_stale_base_version_rejected_with_missed_steps():
@@ -54,8 +71,8 @@ def test_submit_steps_stale_base_version_rejected_with_missed_steps():
     step_repo.append_many(
         "doc-1",
         [
-            StepRecord(version=1, step={"a": 1}, client_id="c1", author_name="Bob"),
-            StepRecord(version=2, step={"a": 2}, client_id="c1", author_name="Bob"),
+            StepRecord(version=1, step={"a": 1}, client_id="c1", author_name="Bob", author_id="bob-id", author_color="#2f9e44"),
+            StepRecord(version=2, step={"a": 2}, client_id="c1", author_name="Bob", author_id="bob-id", author_color="#2f9e44"),
         ],
     )
 
@@ -67,6 +84,8 @@ def test_submit_steps_stale_base_version_rejected_with_missed_steps():
         steps=[{"stepType": "replace"}],
         client_id="client-b",
         author_name="Carol",
+        author_id="carol-id",
+        author_color="#1971c2",
         new_content={"type": "doc", "content": ["stale"]},
     )
 

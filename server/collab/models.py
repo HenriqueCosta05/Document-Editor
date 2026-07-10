@@ -41,6 +41,8 @@ class Step(models.Model):
     step = models.JSONField()
     client_id = models.CharField(max_length=64)
     author_name = models.CharField(max_length=64)
+    author_id = models.CharField(max_length=64, blank=True, default="")
+    author_color = models.CharField(max_length=16, blank=True, default="#000000")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

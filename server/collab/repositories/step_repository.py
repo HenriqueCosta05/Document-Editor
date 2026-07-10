@@ -11,6 +11,8 @@ class StepRepository:
                 step=s.step,
                 client_id=s.client_id,
                 author_name=s.author_name,
+                author_id=s.author_id,
+                author_color=s.author_color,
             )
             for s in qs
         ]
@@ -24,6 +26,8 @@ class StepRepository:
                     step=r.step,
                     client_id=r.client_id,
                     author_name=r.author_name,
+                    author_id=r.author_id,
+                    author_color=r.author_color,
                 )
                 for r in records
             ]
