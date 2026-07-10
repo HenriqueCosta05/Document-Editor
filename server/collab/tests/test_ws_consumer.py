@@ -1,10 +1,16 @@
 import pytest
 from channels.testing import WebsocketCommunicator
 
+from collab.interfaces.ws import consumers
 from collab.interfaces.ws.consumers import DocumentCollabConsumer
 from collab.models import Document
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def _fast_flush_debounce(monkeypatch):
+    monkeypatch.setattr(consumers, "FLUSH_DEBOUNCE_SECONDS", 0.05)
 
 
 @pytest.mark.asyncio
@@ -48,6 +54,13 @@ async def test_broadcast_reaches_other_client_in_same_document_group():
 
     updated = await Document.objects.aget(pk="doc-1")
     assert updated.version == 1
+
+    saved_to_alice = await alice.receive_json_from(timeout=1)
+    saved_to_bob = await bob.receive_json_from(timeout=1)
+    for msg in (saved_to_alice, saved_to_bob):
+        assert msg == {"type": "content_saved", "version": 1}
+
+    updated = await Document.objects.aget(pk="doc-1")
     assert updated.content == {"type": "doc", "content": ["hi"]}
 
     await alice.disconnect()

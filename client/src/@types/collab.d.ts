@@ -22,4 +22,5 @@ export type ServerToClientMessage =
     | { type: "rebase_required"; steps: unknown[]; clientIDs: string[]; authors: CollabIdentity[]; version: number }
     | { type: "new_steps"; steps: unknown[]; clientIDs: string[]; authors: CollabIdentity[]; version: number }
     | { type: "cursor_update"; identity: CollabIdentity; from: number; to: number }
-    | { type: "cursor_left"; identityId: string };
+    | { type: "cursor_left"; identityId: string }
+    | { type: "content_saved"; version: number };

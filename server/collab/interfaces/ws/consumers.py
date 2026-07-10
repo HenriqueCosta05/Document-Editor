@@ -17,6 +17,55 @@ from collab.services.identity_service import resolve_or_create_identity
 # the doc. This serializes submissions per doc_id within this process.
 _document_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
+# How long a document must go without an accepted step before its cached
+# content gets written to sqlite (see content_cache). A module-level
+# constant, not a magic number inline, so tests can shrink it.
+FLUSH_DEBOUNCE_SECONDS = 2.0
+
+_flush_tasks: dict[str, asyncio.Task] = {}
+_presence_counts: dict[str, int] = defaultdict(int)
+
+
+def _schedule_flush(doc_id: str, group_name: str, channel_layer) -> None:
+    existing = _flush_tasks.get(doc_id)
+    if existing and not existing.done():
+        existing.cancel()
+    _flush_tasks[doc_id] = asyncio.create_task(_flush_after_delay(doc_id, group_name, channel_layer))
+
+
+async def _flush_after_delay(doc_id: str, group_name: str, channel_layer) -> None:
+    try:
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS)
+    except asyncio.CancelledError:
+        return
+    # Natural completion — drop our own entry (not via _flush_now's
+    # cancel-and-pop, which would cancel the task currently running this
+    # very function) before doing the write.
+    _flush_tasks.pop(doc_id, None)
+    await _write_and_broadcast(doc_id, group_name, channel_layer)
+
+
+async def _flush_now(doc_id: str, group_name: str, channel_layer) -> None:
+    """Flushes immediately, e.g. when the last tab on a doc disconnects
+    and there's no reason to wait out the rest of the debounce."""
+    task = _flush_tasks.pop(doc_id, None)
+    if task and not task.done():
+        task.cancel()
+    await _write_and_broadcast(doc_id, group_name, channel_layer)
+
+
+async def _write_and_broadcast(doc_id: str, group_name: str, channel_layer) -> None:
+    # Shares _document_locks with _handle_submit_steps: flush_pending()
+    # writes the same Document row that submit_steps's transaction does.
+    # Without this lock the two can race under SQLite (no real row lock
+    # from select_for_update there — see get_for_update's docstring),
+    # and a flush landing mid-submit raises "database is locked", silently
+    # dropping that step's ack/broadcast.
+    async with _document_locks[doc_id]:
+        version = await database_sync_to_async(DocumentRepository().flush_pending)(doc_id)
+    if version is not None:
+        await channel_layer.group_send(group_name, {"type": "broadcast_content_saved", "version": version})
+
 
 def _author_payload(record):
     return {"id": record.author_id, "displayName": record.author_name, "color": record.author_color}
@@ -33,6 +82,7 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
         self.identity = None
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        _presence_counts[self.doc_id] += 1
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
@@ -41,6 +91,15 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
                 self.group_name,
                 {"type": "broadcast_cursor_left", "identity_id": self.identity.id},
             )
+
+        _presence_counts[self.doc_id] -= 1
+        if _presence_counts[self.doc_id] <= 0:
+            # Last tab on this document closed — flush any debounced content
+            # now rather than leaving it cached in-process until the next
+            # editor for this doc happens to show up (or never, if the
+            # process restarts first).
+            del _presence_counts[self.doc_id]
+            await _flush_now(self.doc_id, self.group_name, self.channel_layer)
 
     async def receive_json(self, content, **kwargs):
         msg_type = content.get("type")
@@ -87,6 +146,7 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
             )
 
         if result.accepted:
+            _schedule_flush(self.doc_id, self.group_name, self.channel_layer)
             await self.send_json({"type": "submit_ack", "version": result.new_version})
             await self.channel_layer.group_send(
                 self.group_name,
@@ -157,3 +217,6 @@ class DocumentCollabConsumer(AsyncJsonWebsocketConsumer):
 
     async def broadcast_cursor_left(self, event):
         await self.send_json({"type": "cursor_left", "identityId": event["identity_id"]})
+
+    async def broadcast_content_saved(self, event):
+        await self.send_json({"type": "content_saved", "version": event["version"]})

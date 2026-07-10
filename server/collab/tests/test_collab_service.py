@@ -4,9 +4,17 @@ from collab.domain.entities import StepRecord
 from collab.models import Document
 from collab.repositories.document_repository import DocumentRepository
 from collab.repositories.step_repository import StepRepository
+from collab.services import content_cache
 from collab.services.collab_service import get_snapshot, submit_steps
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def _clear_content_cache():
+    content_cache._pending.clear()
+    yield
+    content_cache._pending.clear()
 
 
 def _make_doc(doc_id="doc-1", version=0, content=None):
@@ -46,8 +54,15 @@ def test_submit_steps_accepted_advances_version_and_appends_steps():
 
     updated = Document.objects.get(pk="doc-1")
     assert updated.version == 2
-    assert updated.content == {"type": "doc", "content": ["updated"]}
+    # content isn't written to sqlite synchronously — it's cached for the
+    # consumer's debounced flush (see content_cache) — but a fresh read
+    # through get_snapshot must still see it immediately.
+    assert updated.content == {"type": "doc", "content": []}
     assert updated.steps.count() == 2
+
+    snapshot = get_snapshot(DocumentRepository(), "doc-1")
+    assert snapshot.version == 2
+    assert snapshot.content == {"type": "doc", "content": ["updated"]}
 
 
 def test_submit_steps_stale_base_version_rejected_with_missed_steps():

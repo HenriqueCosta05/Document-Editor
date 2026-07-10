@@ -9,6 +9,7 @@ export type CollabSocketHandlers = {
     onNewSteps?: (message: Extract<ServerToClientMessage, { type: "new_steps" }>) => void;
     onCursorUpdate?: (message: Extract<ServerToClientMessage, { type: "cursor_update" }>) => void;
     onCursorLeft?: (message: Extract<ServerToClientMessage, { type: "cursor_left" }>) => void;
+    onContentSaved?: (message: Extract<ServerToClientMessage, { type: "content_saved" }>) => void;
     // Fired after a *dropped* connection reopens (not on the first connect).
     // The doc/version may have moved on while offline, so the caller should
     // re-fetch collab-state and rebuild local editor state from it rather
@@ -79,6 +80,9 @@ export class CollabSocket {
                     break;
                 case "cursor_left":
                     this.handlers.onCursorLeft?.(message);
+                    break;
+                case "content_saved":
+                    this.handlers.onContentSaved?.(message);
                     break;
             }
         });

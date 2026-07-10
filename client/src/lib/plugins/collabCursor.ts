@@ -7,11 +7,21 @@ export type RemoteCursor = {
     identity: CollabIdentity;
     from: number;
     to: number;
+    lastSeen: number;
 };
 
 type RemoteCursors = Map<string, RemoteCursor>;
 
-type CursorMeta = { type: "update"; identity: CollabIdentity; from: number; to: number } | { type: "remove"; identityId: string };
+type CursorMeta =
+    | { type: "update"; identity: CollabIdentity; from: number; to: number }
+    | { type: "remove"; identityId: string }
+    | { type: "prune"; now: number };
+
+// A remote cursor that hasn't moved or re-broadcast in this long is
+// considered stale and dropped — either the collaborator stopped
+// interacting (Google Docs fades the cursor label the same way) or their
+// tab went away without a clean disconnect (no cursor_left message).
+const CURSOR_STALE_AFTER_MS = 6000;
 
 export const collabCursorKey = new PluginKey<RemoteCursors>("collabCursor");
 
@@ -65,10 +75,17 @@ export function collabCursorPlugin(): Plugin<RemoteCursors> {
                 const meta = tr.getMeta(collabCursorKey) as CursorMeta | undefined;
                 if (meta?.type === "update") {
                     next = new Map(next);
-                    next.set(meta.identity.id, { identity: meta.identity, from: meta.from, to: meta.to });
+                    next.set(meta.identity.id, { identity: meta.identity, from: meta.from, to: meta.to, lastSeen: Date.now() });
                 } else if (meta?.type === "remove") {
                     next = new Map(next);
                     next.delete(meta.identityId);
+                } else if (meta?.type === "prune") {
+                    const fresh = Array.from(next.entries()).filter(
+                        ([, cursor]) => meta.now - cursor.lastSeen < CURSOR_STALE_AFTER_MS,
+                    );
+                    if (fresh.length !== next.size) {
+                        next = new Map(fresh);
+                    }
                 }
 
                 return next;

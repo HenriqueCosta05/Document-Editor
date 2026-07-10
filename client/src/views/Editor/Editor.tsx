@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from "../../hooks/redux";
 import { setSaveStatus, setTitle } from "../../store/slices/document";
 import Welcome from "../Welcome/Welcome";
 import { EditorHeader, EditorPage } from "./Editor.style";
+import "prosemirror-view/style/prosemirror.css";
 
 const DISPLAY_NAME_STORAGE_KEY = "documenter.displayName";
 
@@ -21,7 +22,7 @@ const Editor = () => {
 
     const [view, setView] = useState<ProseMirrorEditorView | null>(null);
     const [, setTick] = useState(0);
-    const [displayName, setDisplayName] = useState(() => localStorage.getItem(DISPLAY_NAME_STORAGE_KEY));
+    const [displayName, setDisplayName] = useState(() => sessionStorage.getItem(DISPLAY_NAME_STORAGE_KEY));
 
     const handleReady = useCallback((readyView: ProseMirrorEditorView) => {
         setView(readyView);
@@ -35,8 +36,15 @@ const Editor = () => {
         dispatch(setSaveStatus("dirty"));
     }, [dispatch]);
 
+    const handleSaveStateChange = useCallback(
+        (status: "saving" | "saved") => {
+            dispatch(setSaveStatus(status));
+        },
+        [dispatch],
+    );
+
     const handleWelcomeSubmit = useCallback((name: string) => {
-        localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
+        sessionStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
         setDisplayName(name);
     }, []);
 
@@ -65,6 +73,7 @@ const Editor = () => {
                 onReady={handleReady}
                 onDocChanged={handleDocChanged}
                 onTransaction={handleTransaction}
+                onSaveStateChange={handleSaveStateChange}
             />
         </EditorPage>
     );
